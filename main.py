@@ -21,13 +21,14 @@ batch_size = 32
 img_height = 180
 img_width = 180
 
+#Zdroj: Seminar10
 base_dir = 'images'
 train_dir = os.path.join(base_dir, 'train')
 test_dir = os.path.join(base_dir, 'test')
 
 animals_folders = list(pathlib.Path(train_dir).glob('*'))
 
-
+#Zdroj: Seminar11
 train_ds = tf.keras.utils.image_dataset_from_directory(
     train_dir,
     shuffle=True,
@@ -75,6 +76,8 @@ plt.tight_layout()
 plt.savefig("representants.jpg")
 plt.show()
 """
+"""
+#Zdroj: https://www.geeksforgeeks.org/create-a-pandas-dataframe-from-list-of-dicts/ + ChatGPT
 animals_count_list = []
 for animal_name in class_names:
     train_animal_images = list(pathlib.Path(os.path.join(base_dir, 'train', animal_name)).glob('*'))
@@ -84,3 +87,8 @@ for animal_name in class_names:
                                "Total_count": (len(train_animal_images) + len(test_animal_images))})
 
 animals_count_df = pd.DataFrame(animals_count_list, columns=['Animal', 'Train_count', 'Test_count', 'Total_count'])
+"""
+
+
+
+print()
