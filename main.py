@@ -6,6 +6,11 @@ import pandas as pd
 import numpy as np
 from mpl_toolkits.axes_grid1 import ImageGrid
 import matplotlib.pyplot as plt
+from tensorflow.keras.applications.efficientnet import EfficientNetB2
+from tensorflow.keras.preprocessing import image
+from tensorflow.keras.applications.efficientnet import preprocess_input, decode_predictions
+from keras.models import load_model
+
 
 
 def img_reshape(img):
@@ -16,10 +21,46 @@ def img_reshape(img):
     img = np.asarray(img)
     return img
 
+def get_predictions_train(model, dataset):
+    y_pred = []  # store predicted labels
+    y_true = []  # store true labels
+
+    # iterate over the dataset
+    for image_batch, label_batch in dataset:
+        #image_batch = tf.image.resize(image_batch, (260, 260))
+        #image_batch = tf.keras.applications.efficientnet.preprocess_input(image_batch)
+        # append true labels
+        y_true.append(label_batch)
+        # compute predictions
+        preds = model.predict(image_batch, verbose=0)
+        dec = decode_predictions(preds, top=1)
+        #print('Predicted:', decode_predictions(preds, top=1))
+        # append predicted labels
+        y_pred.append(np.argmax(preds, axis=- 1))
+
+    # convert the true and predicted labels into tensors
+    y_true = tf.concat([item for item in y_true], axis=0)
+    y_pred_classes = tf.concat([item for item in y_pred], axis=0)
+    class_labels = list(dataset.class_names)
+
+    return y_true, y_pred_classes, class_labels
+
+def get_predictions_test(model, dataset):
+    # get predictions from test data
+    dataset = preprocess_input(dataset)
+    y_pred = model.predict(dataset)
+    # convert predictions classes to one hot vectors
+    y_pred_classes = np.argmax(y_pred, axis=1)
+    # get true labels for test set
+    y_true = np.concatenate([y for x, y in dataset], axis=0)
+    class_labels = list(dataset.class_names)
+
+    return y_true, y_pred_classes, class_labels
+
 
 batch_size = 32
-img_height = 180
-img_width = 180
+img_height = 260
+img_width = 260
 
 #Zdroj: Seminar10
 base_dir = 'images'
@@ -31,28 +72,23 @@ animals_folders = list(pathlib.Path(train_dir).glob('*'))
 #Zdroj: Seminar11
 train_ds = tf.keras.utils.image_dataset_from_directory(
     train_dir,
-    shuffle=True,
-    validation_split=0.1,
-    subset="training",
-    seed=123,
-    image_size=(img_height, img_width),
-    batch_size=batch_size)
-
-val_ds = tf.keras.utils.image_dataset_from_directory(
-    train_dir,
-    validation_split=0.1,
-    subset="validation",
+    shuffle=False,
     seed=123,
     image_size=(img_height, img_width),
     batch_size=batch_size)
 
 test_ds = tf.keras.utils.image_dataset_from_directory(
     test_dir,
+    shuffle=False,
     seed=123,
     image_size=(img_height, img_width),
     batch_size=batch_size)
 
 class_names = train_ds.class_names
+
+AUTOTUNE = tf.data.AUTOTUNE
+train_ds_cache = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
 
 """
 #----------------plot images + animals count--------------------------------------
@@ -89,6 +125,13 @@ for animal_name in class_names:
 animals_count_df = pd.DataFrame(animals_count_list, columns=['Animal', 'Train_count', 'Test_count', 'Total_count'])
 """
 
+#------------------------Imagenet analysis-----------------------------------------
+#model = EfficientNetB2(weights='imagenet')
+#model.save('efficientNetB2.keras')
+model = load_model('efficientNetB2.keras')
+#for el, lab in train_ds:
+#    np.squeeze(el, axis=0)
+#    print()
 
-
+y_true, y_pred_classes, class_labels = get_predictions_train(model, train_ds)
 print()
