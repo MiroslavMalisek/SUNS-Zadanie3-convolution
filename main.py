@@ -4,6 +4,7 @@ import PIL.Image
 import tensorflow as tf
 import pandas as pd
 import numpy as np
+import seaborn as sns
 from mpl_toolkits.axes_grid1 import ImageGrid
 import matplotlib.pyplot as plt
 from tensorflow.keras.applications.efficientnet import EfficientNetB2
@@ -15,6 +16,7 @@ from tensorflow.keras.layers import RandomFlip, RandomRotation, RandomContrast, 
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.regularizers import l1, l2
 from keras.callbacks import EarlyStopping
+from sklearn.metrics import confusion_matrix
 
 batch_size = 32
 img_height = 180
@@ -27,7 +29,7 @@ test_dir = os.path.join(base_dir, 'test')
 
 animals_folders = list(pathlib.Path(train_dir).glob('*'))
 
-"""
+
 # vytvorenie mnozin na prvu cast (analyza)
 
 #Zdroj: Seminar11
@@ -142,9 +144,55 @@ counts = imagenet_preds_df.groupby(['True class', 'Predicted class']).size().res
 counts.sort_values(['True class', 'count'], ascending=[True, False], inplace=True)
 top_3_kinds = counts.groupby('True class').head(3)
 
-"""
 
-# -----------------------Druha cast - vytvorenie CNN-------------------------
+# ------------------------------Druha cast - vytvorenie CNN--------------------------------------------
+
+#zdroj: seminár 11
+def get_predictions_train(model, dataset):
+    y_pred = []  # store predicted labels
+    y_true = []  # store true labels
+
+    # iterate over the dataset
+    for image_batch, label_batch in dataset:
+        # append true labels
+        y_true.append(np.argmax(label_batch, axis=-1))
+        # compute predictions
+        preds = model.predict(image_batch, verbose=0)
+        # append predicted labels
+        y_pred.append(np.argmax(preds, axis=-1))
+
+    # convert the true and predicted labels into tensors
+    y_true_classes = tf.concat([item for item in y_true], axis=0)
+    y_pred_classes = tf.concat([item for item in y_pred], axis=0)
+
+    return y_true_classes, y_pred_classes
+
+def get_predictions_test(model, dataset):
+    # get predictions from test data
+    y_pred = model.predict(dataset)
+    # convert predictions classes to one hot vectors
+    y_pred_classes = np.argmax(y_pred, axis=1)
+    # get true labels for test set
+    y_true = np.concatenate([y for x, y in dataset], axis=0)
+    class_labels = list(dataset.class_names)
+
+    return y_true, y_pred_classes, class_labels
+
+#zdroj: ChatGPT
+def plot_confusion_matrix(true_labels, predicted_labels, class_names, name):
+    conf_matrix = confusion_matrix(true_labels, predicted_labels)
+    # Display the confusion matrix
+    plt.figure(figsize=(10, 10))
+    sns.heatmap(conf_matrix, annot=False, cmap='Blues', cbar=False,
+                xticklabels=class_names, yticklabels=class_names)
+    plt.xlabel('Predicted Labels')
+    plt.ylabel('True Labels')
+    matrix_name = "Confusion matrix for " + name + " dataset"
+    plt.title(matrix_name)
+    plt.tight_layout()
+    plt.show()
+
+
 train_ds_cnn = tf.keras.utils.image_dataset_from_directory(
     train_dir,
     label_mode="categorical",
@@ -166,6 +214,7 @@ val_ds_cnn = tf.keras.utils.image_dataset_from_directory(
 
 test_ds_cnn = tf.keras.utils.image_dataset_from_directory(
     test_dir,
+    shuffle=False,
     label_mode="categorical",
     seed=123,
     image_size=(img_height, img_width),
@@ -179,29 +228,27 @@ val_ds_cnn = val_ds_cnn.cache().prefetch(buffer_size=AUTOTUNE)
 
 num_classes = len(class_names)
 
+#zdroj: https://www.tensorflow.org/tutorials/images/classification
 data_augmentation = Sequential([
-    # Rescaling(1./255, input_shape=(img_height, img_width, 3)),
-    # RandomFlip("horizontal"),
-    # RandomContrast(factor=0.2),
-    # RandomBrightness(factor=0.2)
     RandomFlip("horizontal",
                input_shape=(img_height,
                             img_width,
                             3)),
     RandomRotation(0.1)
 ])
+
+#zdroj: https://pythonsimplified.com/image-classification-using-cnn-and-tensorflow-2/
 model = Sequential([
     #data_augmentation,
     Rescaling(1./255, input_shape=(img_height, img_width, 3)),
     #Rescaling(1./255),
-    Conv2D(16, (3, 3), activation='relu'),
+    Conv2D(16, (3, 3), activation='relu', kernel_regularizer=l2(0.1)),
     MaxPooling2D((3, 3)),
-    Conv2D(32, (3, 3), activation='relu'),
+    Conv2D(32, (3, 3), activation='relu', kernel_regularizer=l1(0.1)),
     MaxPooling2D((3, 3)),
     Flatten(),
-    Dense(64, activation='relu'),
+    Dense(256, activation='relu'),
     Dense(128, activation='relu'),
-    Dense(64, activation='relu'),
     Dense(num_classes, activation='softmax')
 ])
 model.compile(optimizer='adam',
@@ -211,8 +258,16 @@ early_stopping = EarlyStopping(monitor='val_loss', patience=3, mode='auto', verb
 history = model.fit(
     train_ds_cnn,
     validation_data=val_ds_cnn,
-    epochs=15
+    epochs=15,
+    callbacks=[early_stopping]
 )
+
+#Zdroj: zadanie1
+train_scores = model.evaluate(train_ds_cnn, batch_size=batch_size, verbose=1)
+test_scores = model.evaluate(test_ds_cnn, batch_size=batch_size, verbose=1)
+
+print(f"Uspesnost (accuracy) na trenovacich datach: {train_scores[1]:.4f}")
+print(f"Uspesnost (accuracy) na testovacich datach: {test_scores[1]:.4f}")
 
 # Plot loss and accuracy
 plt.plot(history.history['loss'], label='train_loss')
@@ -234,5 +289,11 @@ plt.legend()
 plt.tight_layout()
 # plt.savefig("KerasBestAccuracy.jpg")
 plt.show()
+
+# functions to predict on batches
+train_true_classes, train_pred_classes = get_predictions_train(model, train_ds_cnn)
+test_true_classes, test_pred_classes = get_predictions_train(model, test_ds_cnn)
+plot_confusion_matrix(train_true_classes.numpy(), train_pred_classes.numpy(), class_names, 'train')
+plot_confusion_matrix(test_true_classes.numpy(), test_pred_classes.numpy(), class_names, 'test')
 
 print()
