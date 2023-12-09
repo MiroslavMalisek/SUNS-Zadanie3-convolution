@@ -10,63 +10,25 @@ from tensorflow.keras.applications.efficientnet import EfficientNetB2
 from tensorflow.keras.preprocessing import image
 from tensorflow.keras.applications.efficientnet import preprocess_input, decode_predictions
 from keras.models import load_model
-
-
-def img_reshape(img):
-    height = 110
-    width = 110
-    img = PIL.Image.open(img)
-    img = img.resize((height, width))
-    img = np.asarray(img)
-    return img
-
-def get_predictions_train(model, dataset):
-    y_pred = []  # store predicted labels
-    y_true = []  # store true labels
-
-    # iterate over the dataset
-    for image_batch, label_batch in dataset:
-        #image_batch = tf.image.resize(image_batch, (260, 260))
-        #image_batch = tf.keras.applications.efficientnet.preprocess_input(image_batch)
-        # append true labels
-        y_true.append(label_batch)
-        # compute predictions
-        preds = model.predict(image_batch, verbose=0)
-        dec = decode_predictions(preds, top=1)
-        #print('Predicted:', decode_predictions(preds, top=1))
-        # append predicted labels
-        y_pred.append(np.argmax(preds, axis=- 1))
-
-    # convert the true and predicted labels into tensors
-    y_true = tf.concat([item for item in y_true], axis=0)
-    y_pred_classes = tf.concat([item for item in y_pred], axis=0)
-    class_labels = list(dataset.class_names)
-
-    return y_true, y_pred_classes, class_labels
-
-def get_predictions_test(model, dataset):
-    # get predictions from test data
-    dataset = preprocess_input(dataset)
-    y_pred = model.predict(dataset)
-    # convert predictions classes to one hot vectors
-    y_pred_classes = np.argmax(y_pred, axis=1)
-    # get true labels for test set
-    y_true = np.concatenate([y for x, y in dataset], axis=0)
-    class_labels = list(dataset.class_names)
-
-    return y_true, y_pred_classes, class_labels
-
+from tensorflow.keras.layers import Rescaling, Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+from tensorflow.keras.layers import RandomFlip, RandomRotation, RandomContrast, RandomBrightness
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.regularizers import l1, l2
+from keras.callbacks import EarlyStopping
 
 batch_size = 32
 img_height = 180
 img_width = 180
 
-#Zdroj: Seminar10
+# Zdroj: Seminar10
 base_dir = 'images'
 train_dir = os.path.join(base_dir, 'train')
 test_dir = os.path.join(base_dir, 'test')
 
 animals_folders = list(pathlib.Path(train_dir).glob('*'))
+
+"""
+# vytvorenie mnozin na prvu cast (analyza)
 
 #Zdroj: Seminar11
 train_ds = tf.keras.utils.image_dataset_from_directory(
@@ -92,6 +54,16 @@ train_ds_cache = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
 
 #----------------plot images + animals count--------------------------------------
 #zdroj: https://kanoki.org/2021/05/11/show-images-in-grid-inside-jupyter-notebook-using-matplotlib-and-numpy/
+
+def img_reshape(img):
+    height = 110
+    width = 110
+    img = PIL.Image.open(img)
+    img = img.resize((height, width))
+    img = np.asarray(img)
+    return img
+
+
 img_arr_to_show = []
 for animal_folder in animals_folders:
     img_arr_to_show.append(img_reshape(str(list(animal_folder.glob('*'))[0])))
@@ -169,4 +141,98 @@ imagenet_preds_df = pd.DataFrame({'True class': y_true_classes, 'Predicted class
 counts = imagenet_preds_df.groupby(['True class', 'Predicted class']).size().reset_index(name='count')
 counts.sort_values(['True class', 'count'], ascending=[True, False], inplace=True)
 top_3_kinds = counts.groupby('True class').head(3)
+
+"""
+
+# -----------------------Druha cast - vytvorenie CNN-------------------------
+train_ds_cnn = tf.keras.utils.image_dataset_from_directory(
+    train_dir,
+    label_mode="categorical",
+    shuffle=True,
+    validation_split=0.1,
+    subset="training",
+    seed=123,
+    image_size=(img_height, img_width),
+    batch_size=batch_size)
+
+val_ds_cnn = tf.keras.utils.image_dataset_from_directory(
+    train_dir,
+    label_mode="categorical",
+    validation_split=0.1,
+    subset="validation",
+    seed=123,
+    image_size=(img_height, img_width),
+    batch_size=batch_size)
+
+test_ds_cnn = tf.keras.utils.image_dataset_from_directory(
+    test_dir,
+    label_mode="categorical",
+    seed=123,
+    image_size=(img_height, img_width),
+    batch_size=batch_size)
+
+class_names = train_ds_cnn.class_names
+
+AUTOTUNE = tf.data.AUTOTUNE
+train_ds_cnn = train_ds_cnn.cache().prefetch(buffer_size=AUTOTUNE)
+val_ds_cnn = val_ds_cnn.cache().prefetch(buffer_size=AUTOTUNE)
+
+num_classes = len(class_names)
+
+data_augmentation = Sequential([
+    # Rescaling(1./255, input_shape=(img_height, img_width, 3)),
+    # RandomFlip("horizontal"),
+    # RandomContrast(factor=0.2),
+    # RandomBrightness(factor=0.2)
+    RandomFlip("horizontal",
+               input_shape=(img_height,
+                            img_width,
+                            3)),
+    RandomRotation(0.1)
+])
+model = Sequential([
+    #data_augmentation,
+    Rescaling(1./255, input_shape=(img_height, img_width, 3)),
+    #Rescaling(1./255),
+    Conv2D(16, (3, 3), activation='relu'),
+    MaxPooling2D((3, 3)),
+    Conv2D(32, (3, 3), activation='relu'),
+    MaxPooling2D((3, 3)),
+    Flatten(),
+    Dense(64, activation='relu'),
+    Dense(128, activation='relu'),
+    Dense(64, activation='relu'),
+    Dense(num_classes, activation='softmax')
+])
+model.compile(optimizer='adam',
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
+early_stopping = EarlyStopping(monitor='val_loss', patience=3, mode='auto', verbose=1)
+history = model.fit(
+    train_ds_cnn,
+    validation_data=val_ds_cnn,
+    epochs=15
+)
+
+# Plot loss and accuracy
+plt.plot(history.history['loss'], label='train_loss')
+plt.plot(history.history['val_loss'], label='val_loss')
+plt.title("Chyba v priebehu trenovania")
+plt.xlabel("Epocha")
+plt.ylabel("Loss")
+plt.legend()
+plt.tight_layout()
+# plt.savefig("KerasBestLoss.jpg")
+plt.show()
+
+plt.plot(history.history['accuracy'], label='train_accuracy')
+plt.plot(history.history['val_accuracy'], label='val_accuracy')
+plt.title("Uspesnost v priebehu trenovania")
+plt.xlabel("Epocha")
+plt.ylabel("Accuracy")
+plt.legend()
+plt.tight_layout()
+# plt.savefig("KerasBestAccuracy.jpg")
+plt.show()
+
 print()
