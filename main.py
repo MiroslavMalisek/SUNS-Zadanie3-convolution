@@ -7,16 +7,21 @@ import numpy as np
 import seaborn as sns
 from mpl_toolkits.axes_grid1 import ImageGrid
 import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from tensorflow.keras.applications.efficientnet import EfficientNetB2
 from tensorflow.keras.preprocessing import image
 from tensorflow.keras.applications.efficientnet import preprocess_input, decode_predictions
 from keras.models import load_model
-from tensorflow.keras.layers import Rescaling, Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+from tensorflow.keras.layers import Rescaling, Conv2D, MaxPooling2D, Flatten, Dense, Dropout, GlobalAveragePooling2D
 from tensorflow.keras.layers import RandomFlip, RandomRotation, RandomContrast, RandomBrightness
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.regularizers import l1, l2
 from keras.callbacks import EarlyStopping
 from sklearn.metrics import confusion_matrix
+from sklearn.cluster import KMeans, DBSCAN
+from sklearn.neighbors import NearestNeighbors
+from yellowbrick.cluster import SilhouetteVisualizer
 
 batch_size = 32
 img_height = 180
@@ -29,7 +34,7 @@ test_dir = os.path.join(base_dir, 'test')
 
 animals_folders = list(pathlib.Path(train_dir).glob('*'))
 
-
+"""
 # vytvorenie mnozin na prvu cast (analyza)
 
 #Zdroj: Seminar11
@@ -143,8 +148,9 @@ imagenet_preds_df = pd.DataFrame({'True class': y_true_classes, 'Predicted class
 counts = imagenet_preds_df.groupby(['True class', 'Predicted class']).size().reset_index(name='count')
 counts.sort_values(['True class', 'count'], ascending=[True, False], inplace=True)
 top_3_kinds = counts.groupby('True class').head(3)
+"""
 
-
+"""
 # ------------------------------Druha cast - vytvorenie CNN--------------------------------------------
 
 #zdroj: seminár 11
@@ -295,5 +301,124 @@ train_true_classes, train_pred_classes = get_predictions_train(model, train_ds_c
 test_true_classes, test_pred_classes = get_predictions_train(model, test_ds_cnn)
 plot_confusion_matrix(train_true_classes.numpy(), train_pred_classes.numpy(), class_names, 'train')
 plot_confusion_matrix(test_true_classes.numpy(), test_pred_classes.numpy(), class_names, 'test')
+
+"""
+
+# ----------------------------tretia cast-----------------------------------------------------------------------
+# ----------------------------priznaky do dataframe-------------------------------------------------------------
+#Zdroj: Seminar11
+train_ds_imagenet = tf.keras.utils.image_dataset_from_directory(
+    train_dir,
+    shuffle=False,
+    seed=123,
+    image_size=(img_height, img_width),
+    batch_size=batch_size)
+
+test_ds_imagenet = tf.keras.utils.image_dataset_from_directory(
+    test_dir,
+    shuffle=False,
+    seed=123,
+    image_size=(img_height, img_width),
+    batch_size=batch_size)
+
+class_names = train_ds_imagenet.class_names
+train_files_paths = train_ds_imagenet.file_paths
+test_files_paths = test_ds_imagenet.file_paths
+
+AUTOTUNE = tf.data.AUTOTUNE
+train_ds_imagenet = train_ds_imagenet.cache().prefetch(buffer_size=AUTOTUNE)
+test_ds_imagenet = test_ds_imagenet.cache().prefetch(buffer_size=AUTOTUNE)
+
+
+def extract_features(model, dataset):
+    # get predictions from test data
+    features = model.predict(dataset)
+    global_average_layer = GlobalAveragePooling2D()
+    return global_average_layer(features).numpy()
+
+
+# model2 = EfficientNetB2(weights='imagenet', include_top=False, input_shape=(img_width, img_height, 3))
+# model2.save('efficientNetB2_false.keras')
+model2 = load_model('efficientNetB2_false.keras')
+
+
+# zdroj: seminar 11
+# get predictions for train and test images (all images)
+"""
+train_features_df = pd.DataFrame(extract_features(model2, train_ds_imagenet))
+train_features_df['file_path'] = train_files_paths
+train_features_df['class'] = np.concatenate([y for x, y in train_ds_imagenet], axis=0)
+
+test_features_df = pd.DataFrame(extract_features(model2, test_ds_imagenet))
+test_features_df['file_path'] = test_files_paths
+test_features_df['class'] = np.concatenate([y for x, y in test_ds_imagenet], axis=0)
+
+features_df = pd.concat([train_features_df, test_features_df], ignore_index=True)
+features_df = features_df.sample(frac=1).reset_index(drop=True)
+features_df.to_csv('features_df.csv')
+"""
+features_df = pd.read_csv('features_df.csv')
+features_df.drop(features_df.columns[0], axis=1, inplace=True)
+#input and output features
+features_df_X = features_df.drop(columns=['file_path', 'class'])
+features_df_y = features_df[['file_path', 'class']]
+
+
+"""
+#PCA redukcia
+#zdroj Zadanie 2
+variance = 0.95
+pca = PCA(n_components=variance)
+features_df_X_pca = pca.fit_transform(features_df_X)
+number_pca = pca.n_components_
+features_df_X_pca = pd.DataFrame(data=features_df_X_pca, columns=[f'PC{i}' for i in range(0, number_pca)])
+"""
+
+"""
+#find optimal number of k using elbow method
+#zdroj: ChatGPT
+k_values = range(1, 25)
+inertia = []
+for k in k_values:
+    kmeans = KMeans(n_clusters=k, random_state=42)
+    kmeans.fit(features_df_X)
+    inertia.append(kmeans.inertia_)
+# Plot the elbow curve
+plt.plot(k_values, inertia, marker='o')
+plt.xlabel('Number of Clusters (k)')
+plt.ylabel('Sum of Squared Distances')
+plt.title('Elbow Method to Find Optimal k')
+plt.show()
+
+
+#DBSCAN optima parameters
+#zdroj: https://medium.com/@tarammullin/dbscan-parameter-estimation-ff8330e3a3bd
+neighbors = NearestNeighbors(n_neighbors=100)
+neighbors_fit = neighbors.fit(features_df_X)
+distances, indices = neighbors_fit.kneighbors(features_df_X)
+distances = np.sort(distances, axis=0)
+distances = distances[:, 1]
+plt.title('DBSCAN parameters estimation')
+plt.plot(distances)
+plt.show()
+
+#find optimal number of k using silhouette method
+fig, ax = plt.subplots(5, 2, figsize=(15,20))
+visualizer = None
+for i in range(2, 12):
+    km = KMeans(n_clusters=i, init='k-means++', n_init=10, max_iter=300, random_state=42)
+    q, mod = divmod(i, 2)
+    '''
+    Create SilhouetteVisualizer instance with KMeans instance
+    Fit the visualizer
+    '''
+    visualizer = SilhouetteVisualizer(km, colors='yellowbrick', ax=ax[q-1][mod])
+    visualizer.fit(features_df_X)
+
+visualizer.show()
+plt.show()
+"""
+
+
 
 print()
