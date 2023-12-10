@@ -13,7 +13,7 @@ from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from tensorflow.keras.applications.efficientnet import EfficientNetB2
 from tensorflow.keras.preprocessing import image
 from tensorflow.keras.applications.efficientnet import preprocess_input, decode_predictions
-from keras.models import load_model
+from keras.models import load_model, Model
 from tensorflow.keras.layers import Rescaling, Conv2D, MaxPooling2D, Flatten, Dense, Dropout, GlobalAveragePooling2D
 from tensorflow.keras.layers import RandomFlip, RandomRotation, RandomContrast, RandomBrightness
 from tensorflow.keras.models import Sequential
@@ -149,7 +149,6 @@ counts.sort_values(['True class', 'count'], ascending=[True, False], inplace=Tru
 top_3_kinds = counts.groupby('True class').head(3)
 """
 
-"""
 # ------------------------------Druha cast - vytvorenie CNN--------------------------------------------
 
 #zdroj: seminár 11
@@ -198,6 +197,7 @@ def plot_confusion_matrix(true_labels, predicted_labels, class_names, name):
     plt.show()
 
 
+"""
 train_ds_cnn = tf.keras.utils.image_dataset_from_directory(
     train_dir,
     label_mode="categorical",
@@ -515,4 +515,111 @@ for kmean_value in unique_kmeans:
     show_avg_image_kmean(kmeans_unique_class_df, kmean_value)
 """
 
+
+# ---------------------------transfer learning on imagenet-----------------------------------------
+train_ds_for_transfer = tf.keras.utils.image_dataset_from_directory(
+    train_dir,
+    label_mode="categorical",
+    shuffle=True,
+    validation_split=0.1,
+    subset="training",
+    seed=123,
+    image_size=(img_height, img_width),
+    batch_size=batch_size)
+
+val_ds_for_transfer = tf.keras.utils.image_dataset_from_directory(
+    train_dir,
+    label_mode="categorical",
+    validation_split=0.1,
+    subset="validation",
+    seed=123,
+    image_size=(img_height, img_width),
+    batch_size=batch_size)
+
+test_ds_for_transfer = tf.keras.utils.image_dataset_from_directory(
+    test_dir,
+    shuffle=False,
+    label_mode="categorical",
+    seed=123,
+    image_size=(img_height, img_width),
+    batch_size=batch_size)
+
+class_names = train_ds_for_transfer.class_names
+num_classes = len(class_names)
+
+AUTOTUNE = tf.data.AUTOTUNE
+train_ds_for_transfer = train_ds_for_transfer.cache().prefetch(buffer_size=AUTOTUNE)
+val_ds_for_transfer = val_ds_for_transfer.cache().prefetch(buffer_size=AUTOTUNE)
+test_ds_for_transfer = test_ds_for_transfer.cache().prefetch(buffer_size=AUTOTUNE)
+
+model3 = EfficientNetB2(weights='imagenet', include_top=False, input_shape=(img_width, img_height, 3))
+# model3.save('efficientNetB2_false.keras')
+# model3 = load_model('efficientNetB2_false.keras')
+model3.trainable = False
+"""
+model3.trainable = False
+inputs = tf.keras.Input(shape=(img_width, img_width, 3))
+x = preprocess_input(inputs)
+x = model3(x, training=False)
+x = GlobalAveragePooling2D()(x)
+hidden = Dense(1024, activation='relu')(x)
+outputs = Dense(num_classes, activation='softmax')(hidden)
+model3_final = Model(inputs, outputs)
+"""
+
+
+output = model3.output
+# Condense feature maps from the output
+output = GlobalAveragePooling2D()(output)
+output = Dropout(0.2)(output)
+# Add dense fully connected artificial neural network at the end
+output = Dense(256, activation='relu', kernel_regularizer=l2(0.01))(output)
+## Final layer has 2 output neurons since we're classifying beds and sofas
+final_output = Dense(num_classes, activation='softmax')(output)
+model3_final = Model(inputs=model3.input, outputs=final_output)
+
+
+model3_final.compile(optimizer='adam',
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
+early_stopping = EarlyStopping(monitor='val_loss', patience=3, mode='auto', verbose=1)
+history = model3_final.fit(
+    train_ds_for_transfer,
+    validation_data=val_ds_for_transfer,
+    epochs=15,
+    callbacks=[early_stopping]
+)
+
+train_scores = model3_final.evaluate(train_ds_for_transfer, batch_size=batch_size, verbose=1)
+test_scores = model3_final.evaluate(test_ds_for_transfer, batch_size=batch_size, verbose=1)
+
+print(f"Uspesnost (accuracy) na trenovacich datach: {train_scores[1]:.4f}")
+print(f"Uspesnost (accuracy) na testovacich datach: {test_scores[1]:.4f}")
+
+# Plot loss and accuracy
+plt.plot(history.history['loss'], label='train_loss')
+plt.plot(history.history['val_loss'], label='val_loss')
+plt.title("Chyba v priebehu trenovania")
+plt.xlabel("Epocha")
+plt.ylabel("Loss")
+plt.legend()
+plt.tight_layout()
+# plt.savefig("KerasBestLoss.jpg")
+plt.show()
+
+plt.plot(history.history['accuracy'], label='train_accuracy')
+plt.plot(history.history['val_accuracy'], label='val_accuracy')
+plt.title("Uspesnost v priebehu trenovania")
+plt.xlabel("Epocha")
+plt.ylabel("Accuracy")
+plt.legend()
+plt.tight_layout()
+# plt.savefig("KerasBestAccuracy.jpg")
+plt.show()
+
+# functions to predict on batches
+train_true_classes, train_pred_classes = get_predictions_train(model3_final, train_ds_for_transfer)
+test_true_classes, test_pred_classes = get_predictions_train(model3_final, test_ds_for_transfer)
+plot_confusion_matrix(train_true_classes.numpy(), train_pred_classes.numpy(), class_names, 'train')
+plot_confusion_matrix(test_true_classes.numpy(), test_pred_classes.numpy(), class_names, 'test')
 print()
