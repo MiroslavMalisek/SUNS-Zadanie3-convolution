@@ -303,6 +303,7 @@ plot_confusion_matrix(test_true_classes.numpy(), test_pred_classes.numpy(), clas
 
 """
 
+"""
 # ----------------------------tretia cast-----------------------------------------------------------------------
 # ----------------------------priznaky do dataframe-------------------------------------------------------------
 #Zdroj: Seminar11
@@ -340,6 +341,7 @@ def extract_features(model, dataset):
 # model2.save('efficientNetB2_false.keras')
 model2 = load_model('efficientNetB2_false.keras')
 
+"""
 
 # zdroj: seminar 11
 # get predictions for train and test images (all images)
@@ -429,6 +431,7 @@ features_df['kmeans_cluster'] = kmean_labels
 # features_df.to_csv('features_df_kmeans.csv')
 """
 
+"""
 def kmean_img_open_reshape(img):
     height = 150
     width = 150
@@ -436,6 +439,7 @@ def kmean_img_open_reshape(img):
     img = img.resize((height, width))
     return img
 
+# zdroj: ChatGPT
 def show_images_for_kmean(df, kmean_value):
     fig = plt.figure(figsize=(18, 12))
     plt.title(f'Images for kmean cluster {kmean_value}', fontsize=30)
@@ -443,7 +447,12 @@ def show_images_for_kmean(df, kmean_value):
     # Filter DataFrame for the given kmean value
     kmean_df = df[df['kmeans_cluster'] == kmean_value]
     kmean_df.reset_index(drop=True, inplace=True)
-    number_cols = 5
+    if kmean_value == 1:
+        number_cols = 10
+    elif kmean_value == 8:
+        number_cols = 7
+    else:
+        number_cols = 5
     number_rows = math.ceil(len(kmean_df)/number_cols)
     # Plot images in a grid
     for index, row in kmean_df.iterrows():
@@ -456,21 +465,54 @@ def show_images_for_kmean(df, kmean_value):
 
     plt.axis('off')
     plt.grid(False)
+    plt.tight_layout()
     plt.show()
 
+
+def kmean_open_img_asarray(img):
+    height = 300
+    width = 300
+    img = PIL.Image.open(img)
+    img = img.resize((height, width))
+    #img = np.asarray(img)
+    return img
+
+
+def show_avg_image_kmean(df, kmean_value):
+    images_np = []
+    # Filter DataFrame for the given kmean value
+    kmean_df = df[df['kmeans_cluster'] == kmean_value]
+    kmean_df.reset_index(drop=True, inplace=True)
+
+    for index, row in kmean_df.iterrows():
+        path = row['file_path']
+        images_np.append(kmean_open_img_asarray(path))
+
+    images_np = np.array(images_np)
+    mean_image = np.mean(images_np, axis=0).astype(np.uint8)
+    image = PIL.Image.fromarray(mean_image)
+    image.save(f'Avg_image_kmean{kmean_value}.jpg')
+    image.show()
 
 
 features_df = pd.read_csv('features_df_kmeans.csv')
 features_df.drop(features_df.columns[0], axis=1, inplace=True)
-#features_df.sort_values(by=['kmeans_cluster', 'class'], inplace=True)
+# features_df.sort_values(by=['kmeans_cluster', 'class'], inplace=True)
+# zdroj: ChatGPT
 kmeans_unique_class_df = features_df.groupby('kmeans_cluster').apply(lambda group: group.groupby('class').first())
 kmeans_unique_class_df.reset_index(drop=True, inplace=True)
 kmeans_unique_class_df = kmeans_unique_class_df[['file_path', 'kmeans_cluster']]
 
-
+# -----------------------------kmeans images-------------------------------------
 # Display grids for each unique kmean value
 unique_kmeans = kmeans_unique_class_df['kmeans_cluster'].unique()
 for kmean_value in unique_kmeans:
     show_images_for_kmean(kmeans_unique_class_df, kmean_value)
+
+#average image
+for kmean_value in unique_kmeans:
+    # show_avg_image_kmean(features_df[['file_path', 'kmeans_cluster']], kmean_value)
+    show_avg_image_kmean(kmeans_unique_class_df, kmean_value)
+"""
 
 print()
