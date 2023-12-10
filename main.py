@@ -3,6 +3,7 @@ import os
 import PIL.Image
 import tensorflow as tf
 import pandas as pd
+import math
 import numpy as np
 import seaborn as sns
 from mpl_toolkits.axes_grid1 import ImageGrid
@@ -61,7 +62,6 @@ train_ds_cache = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
 
 #----------------plot images + animals count--------------------------------------
 #zdroj: https://kanoki.org/2021/05/11/show-images-in-grid-inside-jupyter-notebook-using-matplotlib-and-numpy/
-
 def img_reshape(img):
     height = 110
     width = 110
@@ -69,7 +69,6 @@ def img_reshape(img):
     img = img.resize((height, width))
     img = np.asarray(img)
     return img
-
 
 img_arr_to_show = []
 for animal_folder in animals_folders:
@@ -357,12 +356,14 @@ features_df = pd.concat([train_features_df, test_features_df], ignore_index=True
 features_df = features_df.sample(frac=1).reset_index(drop=True)
 features_df.to_csv('features_df.csv')
 """
+
+"""
 features_df = pd.read_csv('features_df.csv')
 features_df.drop(features_df.columns[0], axis=1, inplace=True)
 #input and output features
 features_df_X = features_df.drop(columns=['file_path', 'class'])
 features_df_y = features_df[['file_path', 'class']]
-
+"""
 
 """
 #PCA redukcia
@@ -403,6 +404,7 @@ plt.plot(distances)
 plt.show()
 
 #find optimal number of k using silhouette method
+# zdroj: https://www.scikit-yb.org/en/latest/api/cluster/silhouette.html
 fig, ax = plt.subplots(5, 2, figsize=(15,20))
 visualizer = None
 for i in range(2, 12):
@@ -418,7 +420,57 @@ for i in range(2, 12):
 visualizer.show()
 plt.show()
 """
+"""
+#---------------kmeans--------------------
+# zdroj: https://scikit-learn.org/stable/modules/generated/sklearn.cluster.KMeans.html#sklearn.cluster.KMeans
+kmeans = KMeans(n_clusters=11, random_state=42).fit(features_df_X)
+kmean_labels = kmeans.labels_
+features_df['kmeans_cluster'] = kmean_labels
+# features_df.to_csv('features_df_kmeans.csv')
+"""
+
+def kmean_img_open_reshape(img):
+    height = 150
+    width = 150
+    img = PIL.Image.open(img)
+    img = img.resize((height, width))
+    return img
+
+def show_images_for_kmean(df, kmean_value):
+    fig = plt.figure(figsize=(18, 12))
+    plt.title(f'Images for kmean cluster {kmean_value}', fontsize=30)
+
+    # Filter DataFrame for the given kmean value
+    kmean_df = df[df['kmeans_cluster'] == kmean_value]
+    kmean_df.reset_index(drop=True, inplace=True)
+    number_cols = 5
+    number_rows = math.ceil(len(kmean_df)/number_cols)
+    # Plot images in a grid
+    for index, row in kmean_df.iterrows():
+        path = row['file_path']
+        image = kmean_img_open_reshape(path)
+
+        plt.subplot(number_rows, number_cols, index + 1)
+        plt.imshow(image)
+        plt.axis('off')
+
+    plt.axis('off')
+    plt.grid(False)
+    plt.show()
 
 
+
+features_df = pd.read_csv('features_df_kmeans.csv')
+features_df.drop(features_df.columns[0], axis=1, inplace=True)
+#features_df.sort_values(by=['kmeans_cluster', 'class'], inplace=True)
+kmeans_unique_class_df = features_df.groupby('kmeans_cluster').apply(lambda group: group.groupby('class').first())
+kmeans_unique_class_df.reset_index(drop=True, inplace=True)
+kmeans_unique_class_df = kmeans_unique_class_df[['file_path', 'kmeans_cluster']]
+
+
+# Display grids for each unique kmean value
+unique_kmeans = kmeans_unique_class_df['kmeans_cluster'].unique()
+for kmean_value in unique_kmeans:
+    show_images_for_kmean(kmeans_unique_class_df, kmean_value)
 
 print()
