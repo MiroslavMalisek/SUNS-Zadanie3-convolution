@@ -9,9 +9,7 @@ import seaborn as sns
 from mpl_toolkits.axes_grid1 import ImageGrid
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from tensorflow.keras.applications.efficientnet import EfficientNetB2
-from tensorflow.keras.preprocessing import image
 from tensorflow.keras.applications.efficientnet import preprocess_input, decode_predictions
 from keras.models import load_model, Model
 from tensorflow.keras.layers import Rescaling, Conv2D, MaxPooling2D, Flatten, Dense, Dropout, GlobalAveragePooling2D
@@ -35,8 +33,7 @@ test_dir = os.path.join(base_dir, 'test')
 
 animals_folders = list(pathlib.Path(train_dir).glob('*'))
 
-"""
-# vytvorenie mnozin na prvu cast (analyza)
+#------------------ vytvorenie mnozin na prvu cast (analyza)-----------------------------------------
 
 #Zdroj: Seminar11
 train_ds = tf.keras.utils.image_dataset_from_directory(
@@ -88,8 +85,8 @@ for ax, im, name in zip(grid, img_arr_to_show, class_names):
 plt.tight_layout()
 plt.savefig("representants.jpg")
 plt.show()
-"""
-"""
+
+
 #Zdroj: https://www.geeksforgeeks.org/create-a-pandas-dataframe-from-list-of-dicts/ + ChatGPT
 animals_count_list = []
 for animal_name in class_names:
@@ -125,7 +122,7 @@ def get_predictions_imagenet(model, dataset):
 
 
 model = EfficientNetB2(weights='imagenet')
-model.save('efficientNetB2.keras')
+#model.save('efficientNetB2.keras')
 # model = load_model('efficientNetB2.keras')
 
 # zdroj: seminar 11
@@ -133,9 +130,8 @@ model.save('efficientNetB2.keras')
 y_train_true, y_train_pred_classes, train_class_labels = get_predictions_imagenet(model, train_ds)
 y_test_true, y_test_pred_classes, test_class_labels = get_predictions_imagenet(model, test_ds)
 y_true_np = y_train_true.numpy()
-# concatenate true values for train and test images
+
 y_true_np = np.append(y_true_np, y_test_true.numpy())
-# concatenate predicted values for train and test images
 y_pred_np = y_train_pred_classes.numpy()
 y_pred_np = np.append(y_pred_np, y_test_pred_classes.numpy())
 # change numbers for string names of classes
@@ -147,11 +143,11 @@ imagenet_preds_df = pd.DataFrame({'True class': y_true_classes, 'Predicted class
 counts = imagenet_preds_df.groupby(['True class', 'Predicted class']).size().reset_index(name='count')
 counts.sort_values(['True class', 'count'], ascending=[True, False], inplace=True)
 top_3_kinds = counts.groupby('True class').head(3)
-"""
+
 
 # ------------------------------Druha cast - vytvorenie CNN--------------------------------------------
 
-#zdroj: seminár 11
+# zdroj: seminár 11
 def get_predictions_train(model, dataset):
     y_pred = []  # store predicted labels
     y_true = []  # store true labels
@@ -171,6 +167,7 @@ def get_predictions_train(model, dataset):
 
     return y_true_classes, y_pred_classes
 
+
 def get_predictions_test(model, dataset):
     # get predictions from test data
     y_pred = model.predict(dataset)
@@ -181,6 +178,7 @@ def get_predictions_test(model, dataset):
     class_labels = list(dataset.class_names)
 
     return y_true, y_pred_classes, class_labels
+
 
 #zdroj: ChatGPT
 def plot_confusion_matrix(true_labels, predicted_labels, class_names, name):
@@ -197,7 +195,6 @@ def plot_confusion_matrix(true_labels, predicted_labels, class_names, name):
     plt.show()
 
 
-"""
 train_ds_cnn = tf.keras.utils.image_dataset_from_directory(
     train_dir,
     label_mode="categorical",
@@ -301,9 +298,8 @@ test_true_classes, test_pred_classes = get_predictions_train(model, test_ds_cnn)
 plot_confusion_matrix(train_true_classes.numpy(), train_pred_classes.numpy(), class_names, 'train')
 plot_confusion_matrix(test_true_classes.numpy(), test_pred_classes.numpy(), class_names, 'test')
 
-"""
 
-"""
+
 # ----------------------------tretia cast-----------------------------------------------------------------------
 # ----------------------------priznaky do dataframe-------------------------------------------------------------
 #Zdroj: Seminar11
@@ -337,15 +333,12 @@ def extract_features(model, dataset):
     return global_average_layer(features).numpy()
 
 
-# model2 = EfficientNetB2(weights='imagenet', include_top=False, input_shape=(img_width, img_height, 3))
+model2 = EfficientNetB2(weights='imagenet', include_top=False, input_shape=(img_width, img_height, 3))
 # model2.save('efficientNetB2_false.keras')
-model2 = load_model('efficientNetB2_false.keras')
-
-"""
+# model2 = load_model('efficientNetB2_false.keras')
 
 # zdroj: seminar 11
 # get predictions for train and test images (all images)
-"""
 train_features_df = pd.DataFrame(extract_features(model2, train_ds_imagenet))
 train_features_df['file_path'] = train_files_paths
 train_features_df['class'] = np.concatenate([y for x, y in train_ds_imagenet], axis=0)
@@ -356,18 +349,16 @@ test_features_df['class'] = np.concatenate([y for x, y in test_ds_imagenet], axi
 
 features_df = pd.concat([train_features_df, test_features_df], ignore_index=True)
 features_df = features_df.sample(frac=1).reset_index(drop=True)
-features_df.to_csv('features_df.csv')
-"""
 
-"""
-features_df = pd.read_csv('features_df.csv')
-features_df.drop(features_df.columns[0], axis=1, inplace=True)
+#features_df.to_csv('features_df.csv')
+#features_df = pd.read_csv('features_df.csv')
+#features_df.drop(features_df.columns[0], axis=1, inplace=True)
+
 #input and output features
 features_df_X = features_df.drop(columns=['file_path', 'class'])
 features_df_y = features_df[['file_path', 'class']]
-"""
 
-"""
+
 #PCA redukcia
 #zdroj Zadanie 2
 variance = 0.95
@@ -375,9 +366,7 @@ pca = PCA(n_components=variance)
 features_df_X_pca = pca.fit_transform(features_df_X)
 number_pca = pca.n_components_
 features_df_X_pca = pd.DataFrame(data=features_df_X_pca, columns=[f'PC{i}' for i in range(0, number_pca)])
-"""
 
-"""
 #find optimal number of k using elbow method
 #zdroj: ChatGPT
 k_values = range(1, 25)
@@ -412,26 +401,20 @@ visualizer = None
 for i in range(2, 12):
     km = KMeans(n_clusters=i, init='k-means++', n_init=10, max_iter=300, random_state=42)
     q, mod = divmod(i, 2)
-    '''
-    Create SilhouetteVisualizer instance with KMeans instance
-    Fit the visualizer
-    '''
     visualizer = SilhouetteVisualizer(km, colors='yellowbrick', ax=ax[q-1][mod])
     visualizer.fit(features_df_X)
 
 visualizer.show()
 plt.show()
-"""
-"""
+
+
 #---------------kmeans--------------------
 # zdroj: https://scikit-learn.org/stable/modules/generated/sklearn.cluster.KMeans.html#sklearn.cluster.KMeans
 kmeans = KMeans(n_clusters=11, random_state=42).fit(features_df_X)
 kmean_labels = kmeans.labels_
 features_df['kmeans_cluster'] = kmean_labels
 # features_df.to_csv('features_df_kmeans.csv')
-"""
 
-"""
 def kmean_img_open_reshape(img):
     height = 150
     width = 150
@@ -495,9 +478,11 @@ def show_avg_image_kmean(df, kmean_value):
     image.show()
 
 
-features_df = pd.read_csv('features_df_kmeans.csv')
-features_df.drop(features_df.columns[0], axis=1, inplace=True)
+# features_df = pd.read_csv('features_df_kmeans.csv')
+# features_df.drop(features_df.columns[0], axis=1, inplace=True)
 # features_df.sort_values(by=['kmeans_cluster', 'class'], inplace=True)
+
+#first image in each unique class in each cluster
 # zdroj: ChatGPT
 kmeans_unique_class_df = features_df.groupby('kmeans_cluster').apply(lambda group: group.groupby('class').first())
 kmeans_unique_class_df.reset_index(drop=True, inplace=True)
@@ -513,7 +498,6 @@ for kmean_value in unique_kmeans:
 for kmean_value in unique_kmeans:
     # show_avg_image_kmean(features_df[['file_path', 'kmeans_cluster']], kmean_value)
     show_avg_image_kmean(kmeans_unique_class_df, kmean_value)
-"""
 
 
 # ---------------------------transfer learning on imagenet-----------------------------------------
@@ -553,28 +537,14 @@ val_ds_for_transfer = val_ds_for_transfer.cache().prefetch(buffer_size=AUTOTUNE)
 test_ds_for_transfer = test_ds_for_transfer.cache().prefetch(buffer_size=AUTOTUNE)
 
 model3 = EfficientNetB2(weights='imagenet', include_top=False, input_shape=(img_width, img_height, 3))
-# model3.save('efficientNetB2_false.keras')
-# model3 = load_model('efficientNetB2_false.keras')
 model3.trainable = False
-"""
-model3.trainable = False
-inputs = tf.keras.Input(shape=(img_width, img_width, 3))
-x = preprocess_input(inputs)
-x = model3(x, training=False)
-x = GlobalAveragePooling2D()(x)
-hidden = Dense(1024, activation='relu')(x)
-outputs = Dense(num_classes, activation='softmax')(hidden)
-model3_final = Model(inputs, outputs)
-"""
-
 
 output = model3.output
 # Condense feature maps from the output
 output = GlobalAveragePooling2D()(output)
-output = Dropout(0.2)(output)
 # Add dense fully connected artificial neural network at the end
-output = Dense(256, activation='relu', kernel_regularizer=l2(0.01))(output)
-## Final layer has 2 output neurons since we're classifying beds and sofas
+output = Dense(64, activation='relu', kernel_regularizer=l2(0.01))(output)
+output = Dropout(0.2)(output)
 final_output = Dense(num_classes, activation='softmax')(output)
 model3_final = Model(inputs=model3.input, outputs=final_output)
 
@@ -586,7 +556,7 @@ early_stopping = EarlyStopping(monitor='val_loss', patience=3, mode='auto', verb
 history = model3_final.fit(
     train_ds_for_transfer,
     validation_data=val_ds_for_transfer,
-    epochs=15,
+    epochs=5,
     callbacks=[early_stopping]
 )
 
